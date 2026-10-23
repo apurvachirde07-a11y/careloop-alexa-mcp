@@ -1,0 +1,219 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CareLoop | Medicine Companion</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f3f7f6;color:#20332f}
+header{background:#174f46;color:white;padding:24px 7%}
+header h1{margin:0;font-size:28px}
+header p{margin-bottom:0;color:#d6ece6}
+main{max-width:1000px;margin:28px auto;padding:0 18px}
+.hero,.panel{background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 16px #173c3010}
+.hero{background:#e1f2ec}
+h2{margin-top:0}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+.stat{background:white;padding:14px 18px;border-radius:12px;flex:1;min-width:120px}
+.stat strong{display:block;font-size:24px;margin-bottom:5px}
+form{display:grid;grid-template-columns:2fr 1fr auto;gap:12px}
+input,button{padding:12px;border-radius:9px;font-size:15px}
+input{border:1px solid #cbd9d4;width:100%}
+button{border:0;cursor:pointer;font-weight:bold}
+.primary{background:#176b5a;color:white}
+.taken{background:#d8f2df;color:#175c30}
+.missed{background:#ffeadf;color:#913c21}
+.delete{background:#eee;color:#444}
+.medicine{border:1px solid #e0e9e5;border-radius:12px;padding:16px;margin-top:12px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+.medicine h3{margin:0 0 7px}
+.status{font-size:13px;font-weight:bold}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.notice{font-size:13px;color:#62716c;line-height:1.5}
+#message{margin-top:12px;font-size:14px}
+@media(max-width:600px){form{grid-template-columns:1fr}.medicine{align-items:flex-start}}
+</style>
+</head>
+<body>
+<header>
+  <h1>💚 CareLoop</h1>
+  <p>A caring medicine companion for seniors and their families</p>
+</header>
+
+<main>
+  <section class="hero">
+    <h2>Your daily care, made simpler.</h2>
+    <p>Add a medicine, set its reminder time, and track dose status in one place.</p>
+    <div class="stats">
+      <div class="stat"><strong id="total">0</strong>Total medicines</div>
+      <div class="stat"><strong id="pending">0</strong>Pending doses</div>
+      <div class="stat"><strong id="takenCount">0</strong>Doses taken</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>➕ Add medicine</h2>
+    <form id="medicineForm">
+      <input id="medicineName" placeholder="Medicine name" required maxlength="100">
+      <input id="reminderTime" type="time" required>
+      <button class="primary" type="submit">Add medicine</button>
+    </form>
+    <p id="message" role="status"></p>
+  </section>
+
+  <section class="panel">
+    <h2>💊 Medicine schedule</h2>
+    <div id="medicineList"></div>
+    <p class="notice" id="emptyMessage">No medicines added yet. Add one above to get started.</p>
+  </section>
+
+  <section class="panel">
+    <h2>👨‍👩‍👧 Family care</h2>
+    <p id="familyMessage">No missed doses recorded in this demo.</p>
+    <p class="notice">Demo only: this dashboard does not send real notifications, contact family, or provide medical advice. Follow the prescribed medication instructions.</p>
+  </section>
+</main>
+
+<script>
+const form = document.getElementById("medicineForm");
+const nameInput = document.getElementById("medicineName");
+const timeInput = document.getElementById("reminderTime");
+const list = document.getElementById("medicineList");
+const emptyMessage = document.getElementById("emptyMessage");
+const familyMessage = document.getElementById("familyMessage");
+const message = document.getElementById("message");
+
+let medicines = [];
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "Request failed");
+  }
+  return data;
+}
+
+async function loadMedicines() {
+  try {
+    medicines = await api("/api/medicines");
+    render();
+  } catch (error) {
+    message.textContent = "Could not load data. Check that the Python server is running.";
+  }
+}
+
+form.addEventListener("submit", async function(event) {
+  event.preventDefault();
+  message.textContent = "Adding medicine...";
+
+  try {
+    await api("/api/medicines", {
+      method: "POST",
+      body: JSON.stringify({
+        name: nameInput.value.trim(),
+        reminder_time: timeInput.value
+      })
+    });
+
+    form.reset();
+    message.textContent = "Medicine added successfully.";
+    await loadMedicines();
+  } catch (error) {
+    message.textContent = error.message;
+  }
+});
+
+async function updateStatus(id, status) {
+  try {
+    await api("/api/medicines/" + id, {
+      method: "PATCH",
+      body: JSON.stringify({status})
+    });
+    message.textContent = "Dose status updated.";
+    await loadMedicines();
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+async function removeMedicine(id) {
+  try {
+    await api("/api/medicines/" + id, {method: "DELETE"});
+    message.textContent = "Medicine removed.";
+    await loadMedicines();
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+function render() {
+  list.replaceChildren();
+  emptyMessage.style.display = medicines.length ? "none" : "block";
+
+  medicines.forEach(medicine => {
+    const card = document.createElement("div");
+    card.className = "medicine";
+
+    const details = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = medicine.name;
+
+    const time = document.createElement("div");
+    time.textContent = "Reminder: " + medicine.reminder_time;
+
+    const status = document.createElement("p");
+    status.className = "status";
+    status.textContent = "Status: " + medicine.status;
+
+    details.append(title, time, status);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const takenButton = document.createElement("button");
+    takenButton.className = "taken";
+    takenButton.textContent = "Taken";
+    takenButton.onclick = () => updateStatus(medicine.id, "Taken");
+
+    const missedButton = document.createElement("button");
+    missedButton.className = "missed";
+    missedButton.textContent = "Missed";
+    missedButton.onclick = () => updateStatus(medicine.id, "Missed");
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "delete";
+    deleteButton.textContent = "Remove";
+    deleteButton.onclick = () => removeMedicine(medicine.id);
+
+    actions.append(takenButton, missedButton, deleteButton);
+    card.append(details, actions);
+    list.appendChild(card);
+  });
+
+  document.getElementById("total").textContent = medicines.length;
+  document.getElementById("pending").textContent =
+    medicines.filter(m => m.status === "Pending").length;
+  document.getElementById("takenCount").textContent =
+    medicines.filter(m => m.status === "Taken").length;
+
+  const missed = medicines.filter(m => m.status === "Missed");
+  familyMessage.textContent = missed.length
+    ? "Demo alert: " + missed.map(m => m.name).join(", ") +
+      " marked as missed. No message has been sent to family."
+    : "No missed doses recorded in this demo.";
+}
+
+loadMedicines();
+</script>
+</body>
+</html>
